@@ -18,7 +18,7 @@ object SLRDistributed {
   var counter = 0
   type Vector = DoubleMatrix1D
   val algebra = new DenseDoubleAlgebra()
-  val alpha = 3.0
+  val alpha = 3
   case class MapEnvironment(A: SampleSet, b: OutputSet, x: Vector, u: Vector, z: Vector ) {
     counter+=1
     println("create slice " + counter.toString)
@@ -164,6 +164,8 @@ object SLRDistributed {
     val slicedSet = getBalancedSet(nDocs, nFeatures, docIndex, nSlices, proportion)
     val xEst = solve(slicedSet)
     val x = xEst.viewPart(1,nFeatures)
+    println("###################Solution########################")
+    println(x.cardinality())
     val goodslices = slicedSet match {
       case SlicedDataSet(slices) => {
         slices.map{

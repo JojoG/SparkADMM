@@ -62,7 +62,8 @@ object MutateParTest {
     cached.foreach(vecs => println(vecs.vec2))
   }
   def main(args: Array[String]) {
-    vectorTest()
+    //vectorTest()
+    simpleTest()
   }
 
 
