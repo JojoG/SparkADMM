@@ -27,8 +27,8 @@ object SLRDistributed {
     val Aprime = DoubleFactory2D.sparse.diagonal(bPrime).zMult(A,null)
     val C = DoubleFactory2D.sparse.appendColumns(bPrime.reshape(bPrime.size().toInt,1),Aprime)
     C.assign(DoubleFunctions.neg)
-    val m = A.rows()
-    val n = A.columns()
+    //val m = A.rows()
+    //val n = A.columns()
 
     def loss(x: Vector): Double = {
       val expTerm = C.zMult(x,null)
@@ -99,6 +99,8 @@ object SLRDistributed {
         x0
       }
       x.assign(descent(x,25))
+      //println("x after update")
+      println(x)
     }
     def uUpdate() {
       u.assign(x,DoubleFunctions.plus)
@@ -131,9 +133,13 @@ object SLRDistributed {
             .assign(ADMMFunctions.mean(us),DoubleFunctions.plus)
             .assign(ADMMFunctions.shrinkage(lambda/rho/nSlices.toDouble))
         }
+
+        
         for (_ <- 1 to maxIter) {
           environments.foreach{_.xUpdate()}
           zUpdate()
+          println("z")
+          println(z)
           environments.foreach{_.uUpdate()}
           if (printStuff) {
             println("x update")
@@ -152,6 +158,81 @@ object SLRDistributed {
       }
     }
   }
+
+ /* def xUpdateMoi(A: SampleSet, b: OutputSet, x: DoubleMatrix1D, u: DoubleMatrix1D, z: DoubleMatrix1D ) {
+
+    val bPrime = b.copy()
+    bPrime.assign(DoubleFunctions.mult(2.0)).assign(DoubleFunctions.minus(1.0)).assign(DoubleFunctions.mult(alpha))
+    val Aprime = DoubleFactory2D.sparse.diagonal(bPrime).zMult(A, null)
+    val C = DoubleFactory2D.sparse.appendColumns(bPrime.reshape(bPrime.size().toInt, 1), Aprime)
+    //val C = DoubleFactory2D.sparse.appendColumns(bPrime.reshape(bPrime.size().toInt,1),A)
+    C.assign(DoubleFunctions.neg)
+    // val m = A.rows()
+    // val n = A.columns()
+
+    def loss(x: DoubleMatrix1D): Double = {
+      val expTerm = C.zMult(x, null)
+      expTerm.assign(DoubleFunctions.exp)
+        .assign(DoubleFunctions.plus(1.0))
+        .assign(DoubleFunctions.log)
+      val normTerm = x.copy()
+      normTerm.assign(z, DoubleFunctions.minus)
+        .assign(u, DoubleFunctions.plus)
+      expTerm.zSum() + math.pow(algebra.norm2(normTerm), 2) * rho / 2
+    }
+
+    def gradient(x: DoubleMatrix1D): DoubleMatrix1D = {
+      val expTerm = C.zMult(x, null)
+      expTerm.assign(DoubleFunctions.exp)
+      val firstTerm = expTerm.copy()
+      firstTerm.assign(DoubleFunctions.plus(1.0))
+        .assign(DoubleFunctions.inv)
+        .assign(expTerm, DoubleFunctions.mult)
+      val secondTerm = x.copy()
+      secondTerm.assign(z, DoubleFunctions.minus)
+        .assign(u, DoubleFunctions.plus)
+        .assign(DoubleFunctions.mult(rho))
+      val returnValue = C.zMult(firstTerm, null, 1.0, 1.0, true)
+      returnValue.assign(secondTerm, DoubleFunctions.plus)
+      returnValue
+    }
+    def backtracking(x: DoubleMatrix1D, dx: DoubleMatrix1D, grad: DoubleMatrix1D): Double = {
+      val t0 = 1.0
+      val alpha = .1
+      val beta = .5
+      val lossX = loss(x)
+      val rhsCacheTerm = dx.zDotProduct(grad) * alpha
+      def lhs(t: Double): Double = {
+        val newX = x.copy()
+        newX.assign(dx, DoubleFunctions.plusMultSecond(t))
+        loss(newX)
+      }
+      def rhs(t: Double): Double = {
+        lossX + t * rhsCacheTerm
+      }
+      def helper(t: Double): Double = {
+        if (lhs(t) > rhs(t)) helper(beta * t) else t
+      }
+      helper(t0)
+    }
+
+    def descent(x0: DoubleMatrix1D, maxIter: Int): DoubleMatrix1D = {
+      val tol = 1e-4
+      breakable {
+        for (i <- 1 to maxIter) {
+          val dx = gradient(x0)
+          dx.assign(DoubleFunctions.neg)
+          val t = backtracking(x, dx, gradient(x0))
+          x0.assign(dx, DoubleFunctions.plusMultSecond(t))
+          if (algebra.norm2(dx) < tol) break()
+        }
+      }
+      x0
+    }
+    x.assign(descent(x, 25))
+    println(x)
+  }*/
+  
   def main(args: Array[String]) {
     val nDocs = args(0).toInt
     val nFeatures = args(1).toInt
@@ -166,7 +247,29 @@ object SLRDistributed {
     val x = xEst.viewPart(1,nFeatures)
     println("###################Solution########################")
     println(x.cardinality())
-    val goodslices = slicedSet match {
+
+
+   /* val z = DoubleFactory1D.dense.make(nFeatures +1)
+    val environments1 = slicedSet.slices.map{  slice =>
+      val x: Vector = DoubleFactory1D.dense.make(nFeatures+1)
+      val u: Vector = DoubleFactory1D.dense.make(nFeatures+1)
+      MapEnvironment(slice.samples, slice.output, x,u,z)
+    }
+
+    
+    println("x update with my code")
+    environments1.foreach(dat => xUpdateMoi(dat.A ,dat.b , DoubleFactory1D.dense.make(nFeatures+1),DoubleFactory1D.dense.make(nFeatures+1), DoubleFactory1D.dense.make(nFeatures +1) ))
+
+    println("x update with the good code")
+    val environments = slicedSet.slices.map{  slice =>
+      val x: Vector = DoubleFactory1D.dense.make(nFeatures+1)
+      val u: Vector = DoubleFactory1D.dense.make(nFeatures+1)
+      MapEnvironment(slice.samples, slice.output, x,u,z)
+    }
+
+    environments.foreach(_.xUpdate()) */
+
+    /*val goodslices = slicedSet match {
       case SlicedDataSet(slices) => {
         slices.map{
           case SingleSet(a,b) => {
@@ -255,7 +358,7 @@ object SLRDistributed {
         println(badSlices.map{a => math.pow(a-badavg,2)}.reduce{_+_}/badSlices.size)
         println(goodslices.size.toDouble/(goodslices.size + badSlices.size))
       }
-    }
+    } */
   }
 }
 

@@ -7,9 +7,10 @@ import util.control.Breaks._
 import spark.SparkContext
 import data.ReutersData._
 import cern.colt.matrix.tdouble.{DoubleMatrix1D, DoubleFactory1D, DoubleFactory2D}
-import Vector._
 import spark.{RDD, SparkContext}
 import admm.SLRDistributedSpark.mapEnv
+import admm.Vector._
+import admmutils.ADMMFunctions
 
 
 /**
@@ -23,15 +24,11 @@ import admm.SLRDistributedSpark.mapEnv
 object SLRDistributedSpark {
 
   def xUpdate(A: SampleSet, b: OutputSet, x: DoubleMatrix1D, u: DoubleMatrix1D, z: DoubleMatrix1D ) {
-
     val bPrime = b.copy()
     bPrime.assign(DoubleFunctions.mult(2.0)).assign(DoubleFunctions.minus(1.0)).assign(DoubleFunctions.mult(alpha))
     val Aprime = DoubleFactory2D.sparse.diagonal(bPrime).zMult(A, null)
     val C = DoubleFactory2D.sparse.appendColumns(bPrime.reshape(bPrime.size().toInt, 1), Aprime)
-    //val C = DoubleFactory2D.sparse.appendColumns(bPrime.reshape(bPrime.size().toInt,1),A)
     C.assign(DoubleFunctions.neg)
-    // val m = A.rows()
-    // val n = A.columns()
 
     def loss(x: DoubleMatrix1D): Double = {
       val expTerm = C.zMult(x, null)
@@ -93,12 +90,15 @@ object SLRDistributedSpark {
       x0
     }
     x.assign(descent(x, 25))
+    //println("x intern after upgraded")
+    //println(x)
   }
 
   def uUpdate(sample : SampleSet, output: OutputSet, x: DoubleMatrix1D, u: DoubleMatrix1D, z: DoubleMatrix1D ) {
-    // val z =  DoubleFactory1D.dense.make(oldZ.elements)
     u.assign(x,DoubleFunctions.plus)
       .assign(z,DoubleFunctions.minus)
+    //println("u intern after upgraded")
+    //println(u)
   }
 
   class mapEnv (sc: SparkContext, filePath: String, topicID: Int, nFeatures: Int, nSlices: Int) extends Serializable {
@@ -107,15 +107,22 @@ object SLRDistributedSpark {
 
     val x : DoubleMatrix1D =  DoubleFactory1D.dense.make(nFeatures+1)
     val u : DoubleMatrix1D =  DoubleFactory1D.dense.make(nFeatures+1)
+    val accX : DoubleMatrix1D =  DoubleFactory1D.dense.make(nFeatures+1)
+    val accU : DoubleMatrix1D =  DoubleFactory1D.dense.make(nFeatures+1)
 
     val addXU = distD.map(
-      data => (data.generateReutersSet(topicID)._1,data.generateReutersSet(topicID)._2,x,u))
+      data => (data.generateReutersSet(topicID)._1,data.generateReutersSet(topicID)._2,x,u,accX,accU))
 
     def setX(doubleMatrix1D: DoubleMatrix1D) {addXU.foreach(dat => dat._3.assign(doubleMatrix1D))}
     def setU(doubleMatrix1D: DoubleMatrix1D) {addXU.foreach(dat => dat._4.assign(doubleMatrix1D))}
 
+   // def getA {addXU.foreach(dat => println(dat._1))}
+   // def getB {addXU.foreach(dat => println(dat._2))}
 
-    def setXupdated(z: DoubleMatrix1D) {addXU.foreach(dat => xUpdate(dat._1,dat._2,dat._3,dat._4,z))}
+   // def getX {addXU.foreach(dat => println(dat._3))}
+   // def getU {addXU.foreach(dat => println(dat._4))}
+
+    def setXupdated(z: DoubleMatrix1D) {addXU.foreach(dat => xUpdate(dat._1,dat._2,dat._3,dat._4, z))}
     def setUupdated(z: DoubleMatrix1D) {addXU.foreach(dat => uUpdate(dat._1,dat._2,dat._3,dat._4,z))}
   }
 
@@ -136,8 +143,6 @@ object SLRDistributedSpark {
     rho = args(5).toDouble
     maxIter = args(6).toInt
 
-    //val distData = ReutersRDD.localTextRDD(sc, "etc/data/labeled_rcv1.admm.data", nFeatures).splitSets(nSlices)
-    //var distDataXU = distData.map(data => addXU(data.generateReutersSet(topicID),nFeatures))
     val data =  new mapEnv(sc, "etc/data/labeled_rcv1.admm.data", topicID, nFeatures, nSlices)
     val distDataXU = data.addXU.cache()
 
@@ -145,32 +150,97 @@ object SLRDistributedSpark {
 
     val xMean = DoubleFactory1D.dense.make(nFeatures+1)
     val uMean = DoubleFactory1D.dense.make(nFeatures+1)
-    
+
+
     for (_ <- 1 to maxIter) {
       val accumX = sc.accumulator(Vector.zeros(nFeatures+1))
       val accumU = sc.accumulator(Vector.zeros(nFeatures+1))
 
-      data.setXupdated(z)
+      //println("accumX before updates")
+      //println(accumX)
+      //println("accumU before updates")
+      //println(accumU)
 
-      distDataXU.foreach {
-        data => {
-          val x = data._3
-          val u = data._4
-          accumX += Vector(x.toArray())
-          accumU += Vector(u.toArray())
-        }
+
+      distDataXU.foreach{ data => {
+        val A = data._1
+        val b = data._2
+        val x = data._3
+        val u = data._4
+        val accX = data._5
+        val accU = data._6
+        xUpdate(A,b,x,u,z)
+        accX.assign(DoubleFactory1D.dense.make(nFeatures+1))
+        accU.assign(DoubleFactory1D.dense.make(nFeatures+1))
+      }
       }
 
-      xMean.assign(accumX.value.elements.map (_ / nSlices))
-      uMean.assign(accumU.value.elements.map (_ / nSlices))
-      z.assign(xMean,DoubleFunctions.plus).assign(uMean,DoubleFunctions.plus).assign(DoubleFunctions.mult(lambda / rho / nSlices))
+      distDataXU.foreach{ data => {
+          val A = data._1
+          val b = data._2
+          val x = data._3 
+          val u = data._4 
+          val accX = data._5
+          val accU = data._6
+          xUpdate(A,b,x,u,z)
+          accX.assign(x,DoubleFunctions.plus)
+          accU.assign(u,DoubleFunctions.plus)
+          accumX += Vector(x.toArray())
+          accumU += Vector(u.toArray())
+          //println("accX in the loop")
+         // println(accX)
+          }
+      }
 
+      //println("xmean before updates")
+      //println(xMean)
+      //println("umean before updates")
+      //println(uMean)
+      
+      
+      xMean.assign(accumX.value.elements.map (_ / nSlices))
+      //println("xmean")
+      //println(xMean)
+      //println("cardinal xmean")
+      //println(xMean.cardinality())
+      //println("###############################accumX after updates##############################################")
+      //println(accumX)
+
+      uMean.assign(accumU.value.elements.map (_ / nSlices))
+     // println("umean")
+     // println(uMean)
+
+      z.assign(xMean,DoubleFunctions.plus).assign(uMean,DoubleFunctions.plus).assign(ADMMFunctions.shrinkage(lambda/rho/nSlices.toDouble))
+
+      //println("z")
+     // println(z.cardinality())
+      
       data.setUupdated(z)
 
+      xMean.assign(DoubleFactory1D.dense.make(nFeatures+1))
+      uMean.assign (DoubleFactory1D.dense.make(nFeatures+1))
+
     }
-     println(z.viewPart(1,nFeatures).cardinality())
-    
-   /* val x = z.viewPart(1,nFeatures)
+
+    //println(z.assign(DoubleFunctions.abs).assign(DoubleFunctions.isLess(0.00001),0).cardinality())
+    println("cardinality z")
+    println(z.viewPart(1,nFeatures).cardinality())
+
+    // setXupdated works...
+    /*val data1 =  new mapEnv(sc, "etc/data/labeled_rcv1.admm.data", topicID, nFeatures, nSlices)
+    val distDataXU1 = data1.addXU.cache()
+    val z1 = DoubleFactory1D.dense.make(nFeatures+1)
+    println("From the outside")
+    //distDataXU1.foreach(dat => xUpdate(dat._1, dat._2, dat._3, dat._4, z1 ))
+    distDataXU1.foreach(dat => uUpdate(dat._1, dat._2, dat._3, dat._4, z1 ))
+    val data2 =  new mapEnv(sc, "etc/data/labeled_rcv1.admm.data", topicID, nFeatures, nSlices)
+    //val distDataXU2 = data2.addXU.cache()
+    val z2 = DoubleFactory1D.dense.make(nFeatures+1)
+    println("From inside")
+    //data2.setXupdated(z2)
+    data2.setUupdated(z2)*/
+
+   /*val x = z.viewPart(1,nFeatures)
     val goodslices = data match {
       case SlicedDataSet(slices) => {
         slices.map{
@@ -256,6 +326,6 @@ object SLRDistributedSpark {
         println(badSlices.map{a => math.pow(a-badavg,2)}.reduce{_+_}/badSlices.size)
         println(goodslices.size.toDouble/(goodslices.size + badSlices.size))
       }
-    }*/
+    } */
   }
 }
