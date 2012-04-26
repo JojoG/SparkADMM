@@ -41,21 +41,21 @@ object SLRDistributed {
       expTerm.zSum() + math.pow(algebra.norm2(normTerm),2)*rho/2
     }
     def xUpdate() {
-      def gradient(x:Vector): Vector = {
-        val expTerm = C.zMult(x,null)
-        expTerm.assign(DoubleFunctions.exp)
-        val firstTerm = expTerm.copy()
-        firstTerm.assign(DoubleFunctions.plus(1.0))
-          .assign(DoubleFunctions.inv)
-          .assign(expTerm,DoubleFunctions.mult)
-        val secondTerm = x.copy()
-        secondTerm.assign(z,DoubleFunctions.minus)
-          .assign(u,DoubleFunctions.plus)
-          .assign(DoubleFunctions.mult(rho))
-        val returnValue = C.zMult(firstTerm,null,1.0,1.0,true)
-        returnValue.assign(secondTerm,DoubleFunctions.plus)
-        returnValue
-      }
+        def gradient(x:Vector): Vector = {
+          val expTerm = C.zMult(x,null)
+          expTerm.assign(DoubleFunctions.exp)
+          val firstTerm = expTerm.copy()
+          firstTerm.assign(DoubleFunctions.plus(1.0))
+            .assign(DoubleFunctions.inv)
+            .assign(expTerm,DoubleFunctions.mult)
+          val secondTerm = x.copy()
+          secondTerm.assign(z,DoubleFunctions.minus)
+            .assign(u,DoubleFunctions.plus)
+            .assign(DoubleFunctions.mult(rho))
+          val returnValue = C.zMult(firstTerm,null,1.0,1.0,true)
+          returnValue.assign(secondTerm,DoubleFunctions.plus)
+          returnValue
+        }
       def loss(x: Vector): Double = {
         val expTerm = C.zMult(x,null)
         expTerm.assign(DoubleFunctions.exp)
