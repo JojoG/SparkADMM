@@ -29,6 +29,7 @@ object SLRDistributed {
     C.assign(DoubleFunctions.neg)
     val m = A.rows()
     val n = A.columns()
+    //maybe use another anonymmous variable because x is already in use
     def loss(x: Vector): Double = {
       val expTerm = C.zMult(x,null)
       expTerm.assign(DoubleFunctions.exp)
@@ -111,7 +112,7 @@ object SLRDistributed {
   def solve(data: DataSet[SampleSet,OutputSet]): DoubleMatrix1D = {
     data match {
       case SingleSet(samples,output) => {
-        solve(SlicedDataSet(List(SingleSet(samples,output))))
+        solve(SlicedDataSet(List(SingleSet(samples,output))))//don't understand
       }
       case SlicedDataSet(slices) => {
         val nDocsPerSlice = slices.head.samples.rows
@@ -127,7 +128,7 @@ object SLRDistributed {
         val us = environments.map{_.u}
         val zUpdate = () => {
           z.assign(ADMMFunctions.mean(xs))
-            .assign(ADMMFunctions.mean(us),DoubleFunctions.plus)
+            .assign(ADMMFunctions.mean(us),DoubleFunctions.plus)         //or minus??
             .assign(ADMMFunctions.shrinkage(lambda/rho/nSlices.toDouble))
         }
         for (_ <- 1 to maxIter) {
