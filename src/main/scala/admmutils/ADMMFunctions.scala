@@ -6,6 +6,8 @@ import util.Random
 import cern.colt.matrix.tdouble.impl.{SparseDoubleMatrix2D, SparseDoubleMatrix1D, DenseDoubleMatrix1D}
 import cern.colt.matrix.tdouble.{DoubleMatrix2D, DoubleFactory2D, DoubleFactory1D, DoubleMatrix1D}
 
+
+
 /**
  * User: jdr
  * Date: 4/9/12
