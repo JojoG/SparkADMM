@@ -90,8 +90,8 @@ object SLRDistributedSpark {
       x0
     }
     x.assign(descent(x, 25))
-    //println("x intern after upgraded")
-    //println(x)
+    println("x intern after upgraded")
+    println(x)
   }
 
   def uUpdate(sample : SampleSet, output: OutputSet, x: DoubleMatrix1D, u: DoubleMatrix1D, z: DoubleMatrix1D ) {
@@ -105,13 +105,17 @@ object SLRDistributedSpark {
 
     val distD = ReutersRDD.localTextRDD(sc, filePath, nFeatures).splitSets(nSlices)
 
-    val x : DoubleMatrix1D =  DoubleFactory1D.dense.make(nFeatures+1)
-    val u : DoubleMatrix1D =  DoubleFactory1D.dense.make(nFeatures+1)
-    val accX : DoubleMatrix1D =  DoubleFactory1D.dense.make(nFeatures+1)
-    val accU : DoubleMatrix1D =  DoubleFactory1D.dense.make(nFeatures+1)
+    //val x : DoubleMatrix1D =  DoubleFactory1D.dense.make(nFeatures+1)
+    //val u : DoubleMatrix1D =  DoubleFactory1D.dense.make(nFeatures+1)
+    //val accX : DoubleMatrix1D =  DoubleFactory1D.dense.make(nFeatures+1)
+    //val accU : DoubleMatrix1D =  DoubleFactory1D.dense.make(nFeatures+1)
 
-    val addXU = distD.map(
-      data => (data.generateReutersSet(topicID)._1,data.generateReutersSet(topicID)._2,x,u,accX,accU))
+    val addXU = distD.map( data => {
+      val set = data.generateReutersSet(topicID)
+      val A = set._1
+      val b = set._2
+      (A,b,DoubleFactory1D.dense.make(nFeatures+1),DoubleFactory1D.dense.make(nFeatures+1),DoubleFactory1D.dense.make(nFeatures+1))
+    })
 
     def setX(doubleMatrix1D: DoubleMatrix1D) {addXU.foreach(dat => dat._3.assign(doubleMatrix1D))}
     def setU(doubleMatrix1D: DoubleMatrix1D) {addXU.foreach(dat => dat._4.assign(doubleMatrix1D))}
@@ -134,7 +138,7 @@ object SLRDistributedSpark {
 
   def main(args: Array[String]) {
 
-    val sc = new SparkContext("local[2]", "SLRDist")
+    val sc = new SparkContext("local", "SLRDist")
     val nDocs = args(0).toInt
     val nFeatures = args(1).toInt
     val topicID = args(2).toInt
@@ -156,35 +160,12 @@ object SLRDistributedSpark {
       val accumX = sc.accumulator(Vector.zeros(nFeatures+1))
       val accumU = sc.accumulator(Vector.zeros(nFeatures+1))
 
-      //println("accumX before updates")
-      //println(accumX)
-      //println("accumU before updates")
-      //println(accumU)
-
-
-      distDataXU.foreach{ data => {
-        val A = data._1
-        val b = data._2
-        val x = data._3
-        val u = data._4
-        val accX = data._5
-        val accU = data._6
-        xUpdate(A,b,x,u,z)
-        accX.assign(DoubleFactory1D.dense.make(nFeatures+1))
-        accU.assign(DoubleFactory1D.dense.make(nFeatures+1))
-      }
-      }
-
       distDataXU.foreach{ data => {
           val A = data._1
           val b = data._2
           val x = data._3 
-          val u = data._4 
-          val accX = data._5
-          val accU = data._6
+          val u = data._4
           xUpdate(A,b,x,u,z)
-          accX.assign(x,DoubleFunctions.plus)
-          accU.assign(u,DoubleFunctions.plus)
           accumX += Vector(x.toArray())
           accumU += Vector(u.toArray())
           //println("accX in the loop")

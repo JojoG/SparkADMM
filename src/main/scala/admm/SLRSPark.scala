@@ -37,11 +37,22 @@ object SLRSpark extends App {
     val u = DoubleFactory1D.sparse.make(n + 1)
     val z = DoubleFactory1D.sparse.make(n + 1)
 
-    val bPrime = outputs.copy()
+    /*val bPrime = outputs.copy()
     bPrime.assign(DoubleFunctions.mult(2.0)).assign(DoubleFunctions.minus(1.0)).assign(DoubleFunctions.mult(alpha))
     val Aprime = DoubleFactory2D.sparse.diagonal(bPrime).zMult(samples,null)
     val C = DoubleFactory2D.sparse.appendColumns(bPrime.reshape(bPrime.size().toInt,1),Aprime)
-    C.assign(DoubleFunctions.neg)
+    C.assign(DoubleFunctions.neg) */
+
+    def getC : DoubleMatrix2D = {
+      val bPrime = outputs.copy()
+      bPrime.assign(DoubleFunctions.mult(2.0)).assign(DoubleFunctions.minus(1.0)).assign(DoubleFunctions.mult(alpha))
+      val Aprime = DoubleFactory2D.sparse.diagonal(bPrime).zMult(samples,null)
+      val C = DoubleFactory2D.sparse.appendColumns(bPrime.reshape(bPrime.size().toInt,1),Aprime)
+      C.assign(DoubleFunctions.neg)
+      C
+    }
+
+    val C = getC
 
     def updateX {
       def gradient(x: DoubleMatrix1D): DoubleMatrix1D = {
@@ -117,12 +128,12 @@ object SLRSpark extends App {
 //  val envs = ReutersRDD.hdfsTextRDD(sc, "/user/hduser/data").splitSets(nSplits, splitSize).map(set => {
 //    new MapEnvironment(set.samples, set.outputs(topicIndex))
 //  }).cache()
-    val envs = ReutersRDD.localTextRDD(sc, "etc/data/labeled_rcv1.admm.data").splitSets(nSplits).map(set => {
+  val envs = ReutersRDD.localTextRDD(sc, "etc/data/labeled_rcv1.admm.data",50).splitSets(nSplits).map(set => {
       new MapEnvironment(set.samples, set.outputs(topicIndex))
     }).cache()
 
-  val z = DoubleFactory1D.sparse.make(1001)
-  for (_ <- 1 to 100) {
+  val z = DoubleFactory1D.sparse.make(51)
+  for (_ <- 1 to 5) {
     envs.foreach(_.updateX)
 
     z.assign(
@@ -141,4 +152,8 @@ object SLRSpark extends App {
     envs.foreach(_.z.assign(z))
     envs.foreach(_.updateU)
   }
+
+
+
+
 }
