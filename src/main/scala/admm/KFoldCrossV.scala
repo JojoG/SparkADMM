@@ -1,49 +1,49 @@
 package admm
 
-import data.ReutersData._
-import spark.SparkContext
-import admm.SLRSpark.MapEnvironment
 import cern.jet.math.tdouble.DoubleFunctions
-import admmutils.ADMMFunctions
-import util.control.Breaks._
 import cern.colt.matrix.tdouble.{DoubleFactory2D, DoubleFactory1D, DoubleMatrix1D, DoubleMatrix2D}
+import util.control.Breaks._
+import spark.SparkContext
 import cern.colt.matrix.tdouble.algo.DenseDoubleAlgebra
-
+import data.ReutersData.ReutersRDD
+import admmutils.ADMMFunctions
 
 /**
- * User: jdr
- * Date: 4/25/12
- * Time: 3:40 PM
+ * Created by IntelliJ IDEA.
+ * User: Jojo
+ * Date: 30/04/12
+ * Time: 23:04
+ * To change this template use File | Settings | File Templates.
  */
 
-object SLRSpark extends App {
-  val nSplits = 10
-  val splitSize = 10
+object KFoldCrossV extends App {
+
+  val K = 10
+  //val nSplits = 10
+  //val splitSize = 10
   val topicIndex = 0
+  val nFeatures = 50
   val sc = new SparkContext("local[2]", "test")
   val algebra = new DenseDoubleAlgebra()
+
+  var kTot = 0
 
   val rho = 1.0
   val lambda = 0.1
   val alpha = 1
 
   class MapEnvironment(samples: DoubleMatrix2D, outputs: DoubleMatrix1D) {
-    val rho = SLRSpark.rho
-    val lambda = SLRSpark.lambda
-    val alpha = SLRSpark.alpha
+    val rho = KFoldCrossV.rho
+    val lambda = KFoldCrossV.lambda
+    val alpha = KFoldCrossV.alpha
     val n = samples.columns()
     val m = samples.rows()
     val x = DoubleFactory1D.sparse.make(n + 1)
     val u = DoubleFactory1D.sparse.make(n + 1)
     val z = DoubleFactory1D.sparse.make(n + 1)
     val diff = DoubleFactory1D.sparse.make(1)
-    
-
-    /*val bPrime = outputs.copy()
-    bPrime.assign(DoubleFunctions.mult(2.0)).assign(DoubleFunctions.minus(1.0)).assign(DoubleFunctions.mult(alpha))
-    val Aprime = DoubleFactory2D.sparse.diagonal(bPrime).zMult(samples,null)
-    val C = DoubleFactory2D.sparse.appendColumns(bPrime.reshape(bPrime.size().toInt,1),Aprime)
-    C.assign(DoubleFunctions.neg) */
+    kTot += 1
+    val k = kTot
 
     def getC : DoubleMatrix2D = {
       val bPrime = outputs.copy()
@@ -125,7 +125,7 @@ object SLRSpark extends App {
     def updateZ(newZ: DoubleMatrix1D) {
       z.assign(newZ)
     }
-    
+
     def updateDiff {
       val y = DoubleFactory1D.sparse.make(m)
       samples.zMult(z.viewPart(1,n),y)
@@ -134,52 +134,77 @@ object SLRSpark extends App {
     }
   }
 
-//  val envs = ReutersRDD.hdfsTextRDD(sc, "/user/hduser/data").splitSets(nSplits, splitSize).map(set => {
-//    new MapEnvironment(set.samples, set.outputs(topicIndex))
-//  }).cache()
-  val envs = ReutersRDD.localTextRDD(sc, "etc/data/labeled_rcv1.admm.data",50).splitSets(nSplits).map(set => {
-      new MapEnvironment(set.samples, set.outputs(topicIndex))
-    }).cache()
+  val envs = ReutersRDD.localTextRDD(sc, "etc/data/labeled_rcv1.admm.data",nFeatures).splitSets(K).map(set => {
+    new MapEnvironment(set.samples, set.outputs(topicIndex))
+  }).cache()
 
-  val z = DoubleFactory1D.sparse.make(51)
-  for (_ <- 1 to 5) {
-    envs.foreach(_.updateX)
 
-    z.assign(
-      envs.map(env => {
-        val sum = env.x.copy()
-        sum.assign(env.u, DoubleFunctions.plus)
-        sum
+  val s = DoubleFactory1D.sparse.make(1)
+
+  for (i <- 1 to K) {
+
+    val z = DoubleFactory1D.sparse.make(nFeatures + 1)
+    envs.foreach{env => {
+      env.x.assign(DoubleFactory1D.sparse.make(nFeatures + 1))
+      env.z.assign(DoubleFactory1D.sparse.make(nFeatures + 1))
+      env.u.assign(DoubleFactory1D.sparse.make(nFeatures + 1))
+    }}
+
+    
+    for (_ <- 1 to 5) {
+      envs.foreach( env => {
+        if( env.k.==(i) == false ){
+          env.updateX;
+        }
       })
-        .reduce(
+
+      z.assign(
+        envs.map(env => {
+          if( env.k.==(i) == false ){  
+            val sum = env.x.copy()
+            sum.assign(env.u, DoubleFunctions.plus)
+            sum
+          } else {DoubleFactory1D.sparse.make(nFeatures + 1)}
+        })
+          .reduce(
+          (a, b) => {
+            a.assign(b, DoubleFunctions.plus)
+            a
+          })
+          .assign(DoubleFunctions.div(K-1)).assign(ADMMFunctions.shrinkage(lambda / rho / ((K-1).toDouble))))
+
+      envs.foreach(env => {
+        if( env.k.!=(i) ){
+          env.z.assign(z)
+        }
+      })
+      envs.foreach(env => {
+        if( env.k.!=(i) ){
+          env.updateU
+        }
+      })
+    }
+
+
+    s.assign(
+      envs.map( env => {
+        if( env.k.==(i) ){
+          env.z.assign(z)
+          env.updateDiff
+          val diff = env.diff.copy()
+          diff
+        }  else {DoubleFactory1D.sparse.make(1)}
+      }
+      ).reduce(
         (a, b) => {
           a.assign(b, DoubleFunctions.plus)
           a
         })
-        .assign(DoubleFunctions.div(nSplits)).assign(ADMMFunctions.shrinkage(lambda / rho / (nSplits.toDouble))))
-
-    envs.foreach(_.z.assign(z))
-    envs.foreach(_.updateU)
+    )
   }
-
- val s = DoubleFactory1D.sparse.make(1)
- s.assign(
- envs.map( env => {
-   env.updateDiff
-   val diff = env.diff.copy()    
-   diff
- }   
- ).reduce(
-   (a, b) => {
-     a.assign(b, DoubleFunctions.plus).assign(DoubleFunctions.div(2))
-     a
-   })
- )
-
-  println("z")
-  println(z)
-
+  
+  s.assign(DoubleFunctions.div(K))
+  
   println("s")
   println(s)
-
 }

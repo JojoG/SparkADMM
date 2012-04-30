@@ -48,7 +48,15 @@ def main (args: Array[String]) {
   
   println("after filter")
   println(b)
+
+   for (i <- 0 to 4)
+    if( b.getQuick(i)  == 1 ){
+      println("Good")
+    } else {println("bad")}
   
-  
+ println("test")
+  println(1 != 1)
+  println(2 != 1)
+
 }
 }
