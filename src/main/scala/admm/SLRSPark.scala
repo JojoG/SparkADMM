@@ -36,6 +36,8 @@ object SLRSpark extends App {
     val x = DoubleFactory1D.sparse.make(n + 1)
     val u = DoubleFactory1D.sparse.make(n + 1)
     val z = DoubleFactory1D.sparse.make(n + 1)
+    val diff = DoubleFactory1D.sparse.make(1)
+    
 
     /*val bPrime = outputs.copy()
     bPrime.assign(DoubleFunctions.mult(2.0)).assign(DoubleFunctions.minus(1.0)).assign(DoubleFunctions.mult(alpha))
@@ -123,6 +125,13 @@ object SLRSpark extends App {
     def updateZ(newZ: DoubleMatrix1D) {
       z.assign(newZ)
     }
+    
+    def updateDiff {
+      val y = DoubleFactory1D.sparse.make(m)
+      samples.zMult(z.viewPart(1,n),y)
+      y.assign(DoubleFunctions.greater(0.5)).assign(outputs, DoubleFunctions.minus).assign(DoubleFunctions.abs)
+      diff.assign(y.zSum()).assign(DoubleFunctions.div(m))
+    }
   }
 
 //  val envs = ReutersRDD.hdfsTextRDD(sc, "/user/hduser/data").splitSets(nSplits, splitSize).map(set => {
@@ -153,7 +162,21 @@ object SLRSpark extends App {
     envs.foreach(_.updateU)
   }
 
+ val s = DoubleFactory1D.sparse.make(1)
+ s.assign(
+ envs.map( env => {
+   env.updateDiff
+   val diff = env.diff.copy()    
+   diff
+ }   
+ ).reduce(
+   (a, b) => {
+     a.assign(b, DoubleFunctions.plus).assign(DoubleFunctions.div(2))
+     a
+   })
+ )
 
-
+  println("s")
+  println(s)
 
 }
