@@ -12,6 +12,7 @@ import scala.Array
 import scala.Predef._
 import cern.colt.matrix.tdouble.{DoubleFactory2D, DoubleFactory1D}
 import cern.jet.math.tdouble.DoubleFunctions
+import scala.util.Random
 
 object testMoi {
 def main (args: Array[String]) {
@@ -57,6 +58,20 @@ def main (args: Array[String]) {
  println("test")
   println(1 != 1)
   println(2 != 1)
+  
+  println("random numbers")
+  var r = new Random().nextInt(3)
+  println(r)
+  r = new Random().nextInt(3)
+  println(r)
+  r = new Random().nextInt(3)
+  println(r)
+  r = new Random().nextInt(3)
+  println(r)
+  r = new Random().nextInt(3)
+  println(r)
+  r = new Random().nextInt(3)
+  println(r)
 
 }
 }

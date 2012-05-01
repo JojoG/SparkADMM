@@ -7,6 +7,7 @@ import spark.SparkContext
 import cern.colt.matrix.tdouble.algo.DenseDoubleAlgebra
 import data.ReutersData.ReutersRDD
 import admmutils.ADMMFunctions
+import scala.util.Random
 
 /**
  * Created by IntelliJ IDEA.
@@ -19,14 +20,14 @@ import admmutils.ADMMFunctions
 object KFoldCrossV extends App {
 
   val K = 10
-  //val nSplits = 10
+  val nSplits = 10
   //val splitSize = 10
   val topicIndex = 0
   val nFeatures = 50
   val sc = new SparkContext("local[2]", "test")
   val algebra = new DenseDoubleAlgebra()
 
-  var kTot = 0
+  //var kTot = 0
 
   val rho = 1.0
   val lambda = 0.1
@@ -42,8 +43,9 @@ object KFoldCrossV extends App {
     val u = DoubleFactory1D.sparse.make(n + 1)
     val z = DoubleFactory1D.sparse.make(n + 1)
     val diff = DoubleFactory1D.sparse.make(1)
-    kTot += 1
-    val k = kTot
+   // kTot += 1
+    val k = new Random().nextInt(K)
+
 
     def getC : DoubleMatrix2D = {
       val bPrime = outputs.copy()
@@ -134,7 +136,32 @@ object KFoldCrossV extends App {
     }
   }
 
-  val envs = ReutersRDD.localTextRDD(sc, "etc/data/labeled_rcv1.admm.data",nFeatures).splitSets(K).map(set => {
+  def solve (envs: Seq[MapEnvironment], iter: Int) : DoubleMatrix1D ={
+    val nFeatures = envs.head.n
+    val nSlices = envs.size
+    val z = DoubleFactory1D.sparse.make(nFeatures + 1)
+    for (_ <- 1 to iter) {
+      envs.foreach(_.updateX)
+      z.assign(
+        envs.map(env => {
+          val sum = env.x.copy()
+          sum.assign(env.u, DoubleFunctions.plus)
+          sum
+        })
+          .reduce(
+          (a, b) => {
+            a.assign(b, DoubleFunctions.plus)
+            a
+          })
+          .assign(DoubleFunctions.div(nSlices)).assign(ADMMFunctions.shrinkage(envs.head.lambda / envs.head.rho / (nSlices.toDouble))))
+
+      envs.foreach(_.z.assign(z))
+      envs.foreach(_.updateU)
+    }
+    z
+  }
+  
+  val envs = ReutersRDD.localTextRDD(sc, "etc/data/labeled_rcv1.admm.data",nFeatures).splitSets(nSplits).map(set => {
     new MapEnvironment(set.samples, set.outputs(topicIndex))
   }).cache()
 
@@ -153,14 +180,14 @@ object KFoldCrossV extends App {
     
     for (_ <- 1 to 5) {
       envs.foreach( env => {
-        if( env.k.==(i) == false ){
+        if( env.k.==(i-1) == false ){
           env.updateX;
         }
       })
 
       z.assign(
         envs.map(env => {
-          if( env.k.==(i) == false ){  
+          if( env.k.!=(i-1) ){
             val sum = env.x.copy()
             sum.assign(env.u, DoubleFunctions.plus)
             sum
@@ -174,12 +201,12 @@ object KFoldCrossV extends App {
           .assign(DoubleFunctions.div(K-1)).assign(ADMMFunctions.shrinkage(lambda / rho / ((K-1).toDouble))))
 
       envs.foreach(env => {
-        if( env.k.!=(i) ){
+        if( env.k.!=(i-1) ){
           env.z.assign(z)
         }
       })
       envs.foreach(env => {
-        if( env.k.!=(i) ){
+        if( env.k.!=(i-1) ){
           env.updateU
         }
       })
